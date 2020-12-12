@@ -74,7 +74,7 @@ public class MainActivity extends AppCompatActivity {
     LinearLayout download_lin;
     LinearLayout inference_lin;
     TextView modelnamedisp_tv;
-
+    ProgressBar inferenceBar;
 
     protected Interpreter tflite;
 
@@ -101,6 +101,7 @@ public class MainActivity extends AppCompatActivity {
         inference_btn = findViewById(R.id.inference_btn);
         inference_lin = findViewById(R.id.model_lin);
         modelnamedisp_tv = findViewById(R.id.modelnamedisp_tv);
+        inferenceBar = findViewById(R.id.inferencesprogress);
 
         download_lin.setVisibility(View.INVISIBLE);
         inference_lin.setVisibility(View.GONE);
@@ -123,8 +124,7 @@ public class MainActivity extends AppCompatActivity {
         inference_btn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                downloadDataset("https://srv-store4.gofile.io/download/2Z0lEf/img.zip");
-//                doPreds();
+                doPreds();
             }
         });
         PRDownloader.initialize(getApplicationContext());
@@ -170,80 +170,7 @@ public class MainActivity extends AppCompatActivity {
 
                 });
     }
-    private void downloadDataset(String url){
-        String dirPath = getFilesDir().getAbsolutePath()+File.separator+"downloads";
-        int downloadId = PRDownloader.download(url, dirPath, "img.zip")
-                .build()
-                .setOnStartOrResumeListener(new OnStartOrResumeListener() {
-                    @Override
-                    public void onStartOrResume() {
-                    }
-                })
-                .setOnProgressListener(new OnProgressListener() {
-                    @Override
-                    public void onProgress(Progress progress) {
-                    }
-                })
-                .start(new OnDownloadListener() {
-                    @Override
-                    public void onDownloadComplete() {
-                        Toast.makeText(MainActivity.this,"Downloading file successful",Toast.LENGTH_SHORT).show();
-                        unzip();
-                        Log.d("Images", Arrays.toString(getFilesDir().listFiles()));
 
-                    }
-
-                    @Override
-                    public void onError(Error error) {
-                        Toast.makeText(MainActivity.this,"Error while downloading!",Toast.LENGTH_SHORT).show();
-                    }
-
-                });
-    }
-
-    public void unzip() {
-        String destination = getFilesDir().getAbsolutePath()+File.separator+"images";
-        try {
-            FileInputStream inputStream = new FileInputStream(getFilesDir().getAbsolutePath()+File.separator+"downloads"+File.separator+"img.zip");
-            ZipInputStream zipStream = new ZipInputStream(inputStream);
-            ZipEntry zEntry;
-            while ((zEntry = zipStream.getNextEntry()) != null) {
-                Log.d("Unzip", "Unzipping " + zEntry.getName() + " at "
-                        + destination);
-
-                if (zEntry.isDirectory()) {
-                    hanldeDirectory(zEntry.getName(),destination);
-                } else {
-                    FileOutputStream fout = new FileOutputStream(
-                            destination + "/" + zEntry.getName());
-                    BufferedOutputStream bufout = new BufferedOutputStream(fout);
-                    byte[] buffer = new byte[1024];
-                    int read = 0;
-                    while ((read = zipStream.read(buffer)) != -1) {
-                        bufout.write(buffer, 0, read);
-                    }
-
-                    zipStream.closeEntry();
-                    bufout.close();
-                    fout.close();
-                }
-            }
-            zipStream.close();
-            Log.d("Unzip", "Unzipping complete. path :  " + destination);
-        } catch (Exception e) {
-            Log.d("Unzip", "Unzipping failed");
-            Log.e("Unzip Error ;",e.toString());
-            e.printStackTrace();
-        }
-
-    }
-
-    public void hanldeDirectory(String dir,String destination) {
-        File f = new File(destination + dir);
-        if (!f.isDirectory()) {
-            f.mkdirs();
-        }
-    }
     private TensorImage loadImage(final Bitmap bitmap) {
         // Loads bitmap into a TensorImage.
         inputImageBuffer.load(bitmap);
@@ -276,8 +203,12 @@ public class MainActivity extends AppCompatActivity {
         return largest; // position of the first largest found
     }
     private void doPreds(){
+
         int imageTensorIndex = 0;
         int[] imageShape = tflite.getInputTensor(imageTensorIndex).shape(); // {1, height, width, 3}
+
+        inferenceBar.setMax(1000);
+
         imageSizeY = imageShape[1];
         imageSizeX = imageShape[2];
         DataType imageDataType = tflite.getInputTensor(imageTensorIndex).dataType();
@@ -292,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
 
         String[] images = new String[0];
         try {
-            images = getAssets().list("img");
+            images = getAssets().list("imagen");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -301,7 +232,7 @@ public class MainActivity extends AppCompatActivity {
         for (String im:images) {
             Bitmap b = null;
             try {
-                b = BitmapFactory.decodeStream(getAssets().open("img/" +im));
+                b = BitmapFactory.decodeStream(getAssets().open("imagen/" +im));
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -311,11 +242,13 @@ public class MainActivity extends AppCompatActivity {
             int pred = getIndexOfLargest(outputs);
             arr.add(pred);
             Log.d("Preds", Arrays.toString(outputProbabilityBuffer.getFloatArray()));
+            if(arr.size()%100==0)
+                inferenceBar.setProgress(arr.size());
         }
         JSONArray j = new JSONArray(arr);
         Log.d("Predictions",j.toString());
         Toast.makeText(MainActivity.this,"Predictions Done!",Toast.LENGTH_SHORT).show();
-        sendPreds(j);
+//        sendPreds(j);
     }
     private void sendPreds(final JSONArray arr){
         RequestQueue requestQueue = Volley.newRequestQueue(MainActivity.this);

@@ -129,6 +129,17 @@
                 android:layout_marginHorizontal="100dp"
                 android:layout_marginVertical="10dp"
                 android:layout_height="wrap_content" />
+            <ProgressBar
+                android:id="@+id/inferencesprogress"
+                style="?android:attr/progressBarStyleHorizontal"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                android:indeterminate="false"
+                android:layout_marginHorizontal="50dp"
+                android:progress="0"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
         </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
 
