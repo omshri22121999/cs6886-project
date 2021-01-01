@@ -20,7 +20,7 @@
         android:layout_height="wrap_content" />
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/main_contraint"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/heading_tv"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -122,23 +122,53 @@
                 android:gravity="center"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/modelmean_tv"
+                app:layout_constraintTop_toBottomOf="@+id/modelname_et"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                android:text="Mean Value to Subtract from Input :"
+                android:layout_marginTop="10dp"
+                android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                android:layout_width="match_parent"
+                android:layout_marginHorizontal="20dp"
+                android:layout_height="wrap_content" />
+            <EditText
+                android:id="@+id/modelmean_et"
+                app:layout_constraintTop_toBottomOf="@id/modellink_tv"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                android:layout_marginHorizontal="20dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/modelstd_tv"
+                app:layout_constraintTop_toBottomOf="@+id/modelname_et"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                android:text="Std Value to Scale the Input :"
+                android:layout_marginTop="10dp"
+                android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                android:layout_width="match_parent"
+                android:layout_marginHorizontal="20dp"
+                android:layout_height="wrap_content" />
+            <EditText
+                android:id="@+id/modelstd_et"
+                app:layout_constraintTop_toBottomOf="@id/modellink_tv"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                android:layout_marginHorizontal="20dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
             <Button
                 android:id="@+id/inference_btn"
                 android:layout_width="match_parent"
                 android:text="Run inference"
                 android:layout_marginHorizontal="100dp"
                 android:layout_marginVertical="10dp"
-                android:layout_height="wrap_content" />
-            <ProgressBar
-                android:id="@+id/inferencesprogress"
-                style="?android:attr/progressBarStyleHorizontal"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent"
-                android:indeterminate="false"
-                android:layout_marginHorizontal="50dp"
-                android:progress="0"
-                android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
         </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>

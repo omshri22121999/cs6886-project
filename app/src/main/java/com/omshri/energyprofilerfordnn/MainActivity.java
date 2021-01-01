@@ -1,12 +1,16 @@
 package com.omshri.energyprofilerfordnn;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.constraintlayout.solver.Cache;
 
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.net.Uri;
+import android.os.AsyncTask;
+import android.os.BatteryManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.webkit.URLUtil;
@@ -17,17 +21,10 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.android.volley.AuthFailureError;
-import com.android.volley.Network;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
-import com.android.volley.VolleyLog;
-import com.android.volley.toolbox.BasicNetwork;
-import com.android.volley.toolbox.DiskBasedCache;
-import com.android.volley.toolbox.HurlStack;
-import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 import com.downloader.Error;
@@ -37,13 +34,10 @@ import com.downloader.OnStartOrResumeListener;
 import com.downloader.PRDownloader;
 import com.downloader.Progress;
 
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.json.JSONArray;
-import org.json.JSONObject;
 import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.Interpreter;
 import org.tensorflow.lite.support.common.TensorOperator;
-import org.tensorflow.lite.support.common.TensorProcessor;
 import org.tensorflow.lite.support.common.ops.NormalizeOp;
 import org.tensorflow.lite.support.image.ImageProcessor;
 import org.tensorflow.lite.support.image.TensorImage;
@@ -51,42 +45,45 @@ import org.tensorflow.lite.support.image.ops.ResizeOp;
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
-import java.io.BufferedOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
+import java.lang.ref.WeakReference;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.Calendar;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
 
     ProgressBar progressBar;
     EditText modellink_et;
     EditText modelname_et;
+    EditText modelmean_et;
+    EditText modelstd_et;
     Button download_btn;
     Button inference_btn;
     LinearLayout download_lin;
     LinearLayout inference_lin;
     TextView modelnamedisp_tv;
-    ProgressBar inferenceBar;
 
+    private BatteryManager bm;
     protected Interpreter tflite;
-
+    private int current_readings = 0;
     private TensorImage inputImageBuffer;
+
+    private Boolean run_task = true;
 
     private  int imageSizeX;
     private  int imageSizeY;
 
     private TensorBuffer outputProbabilityBuffer;
 
-    private static final float IMAGE_MEAN = 127.0f;
-    private static final float IMAGE_STD = 128.0f;
+    float current_average;
+
+    private float IMAGE_MEAN = 127.0f;
+    private float IMAGE_STD = 128.0f;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -101,7 +98,10 @@ public class MainActivity extends AppCompatActivity {
         inference_btn = findViewById(R.id.inference_btn);
         inference_lin = findViewById(R.id.model_lin);
         modelnamedisp_tv = findViewById(R.id.modelnamedisp_tv);
-        inferenceBar = findViewById(R.id.inferencesprogress);
+        modelmean_et = findViewById(R.id.modelmean_et);
+        modelstd_et = findViewById(R.id.modelstd_et);
+
+        bm = (BatteryManager) this.getSystemService(BATTERY_SERVICE);
 
         download_lin.setVisibility(View.INVISIBLE);
         inference_lin.setVisibility(View.GONE);
@@ -114,7 +114,16 @@ public class MainActivity extends AppCompatActivity {
                 if(URLUtil.isValidUrl(url)){
                     download_lin.setVisibility(View.VISIBLE);
                     String finalName = (name.equals(""))?"randommodel":name;
-                    downloadModel(url,finalName);
+                    File f = new File(getFilesDir().getAbsolutePath()+File.separator+"downloads"+File.separator+finalName+".tflite");
+                    if(f.exists()){
+                        tflite=new Interpreter(f);
+                        Toast.makeText(MainActivity.this,"Model exists!",Toast.LENGTH_SHORT).show();
+                        inference_lin.setVisibility(View.VISIBLE);
+                    }
+                    else{
+
+                        downloadModel(url,finalName);
+                    }
                 }
                 else{
                     Toast.makeText(MainActivity.this,"Please enter valid URL",Toast.LENGTH_SHORT).show();
@@ -124,6 +133,19 @@ public class MainActivity extends AppCompatActivity {
         inference_btn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if(modelmean_et.getText().toString().equals("")){
+                    IMAGE_MEAN = 127.0f;
+
+                }
+                else{
+                    IMAGE_MEAN = Float.parseFloat(modelmean_et.getText().toString());
+                }
+                if(modelstd_et.getText().toString().equals("")){
+                    IMAGE_STD = 128.0f;
+                }
+                else{
+                    IMAGE_STD = Float.parseFloat(modelstd_et.getText().toString());
+                }
                 doPreds();
             }
         });
@@ -204,10 +226,10 @@ public class MainActivity extends AppCompatActivity {
     }
     private void doPreds(){
 
+        inference_btn.setEnabled(false);
+
         int imageTensorIndex = 0;
         int[] imageShape = tflite.getInputTensor(imageTensorIndex).shape(); // {1, height, width, 3}
-
-        inferenceBar.setMax(1000);
 
         imageSizeY = imageShape[1];
         imageSizeX = imageShape[2];
@@ -227,8 +249,16 @@ public class MainActivity extends AppCompatActivity {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        Log.d("Images", Arrays.toString(images));
-        ArrayList<Integer> arr = new ArrayList<>();
+        final ArrayList<Integer> arr = new ArrayList<>();
+
+        long startTime = Calendar.getInstance().getTimeInMillis();
+
+        current_average = 0;
+        current_readings = 0;
+        run_task = true;
+
+        getCurrents();
+
         for (String im:images) {
             Bitmap b = null;
             try {
@@ -241,15 +271,61 @@ public class MainActivity extends AppCompatActivity {
             float[] outputs = outputProbabilityBuffer.getFloatArray();
             int pred = getIndexOfLargest(outputs);
             arr.add(pred);
-            Log.d("Preds", Arrays.toString(outputProbabilityBuffer.getFloatArray()));
-            if(arr.size()%100==0)
-                inferenceBar.setProgress(arr.size());
         }
+
+        run_task=false;
+
         JSONArray j = new JSONArray(arr);
         Log.d("Predictions",j.toString());
-        Toast.makeText(MainActivity.this,"Predictions Done!",Toast.LENGTH_SHORT).show();
+        long endTime = Calendar.getInstance().getTimeInMillis();
+
+        Float totalTime = (float) ((endTime - startTime) / (3600.0*1000.0));
+
+        Log.d("Time Taken",String.valueOf(totalTime));
+        Log.d("Average Current",String.valueOf(current_average));
+        Log.d("Charge Consumed", String.valueOf(current_average*totalTime));
+
+        inference_btn.setEnabled(true);
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("Finished Runnning Model")
+                .setMessage("Battery Capacity Used = "+ current_average * totalTime / 1000.0)
+
+                // Specifying a listener allows you to take an action before dismissing the dialog.
+                // The dialog is automatically dismissed when a dialog button is clicked.
+                .setPositiveButton(android.R.string.yes, null)
+                // A null listener allows the button to dismiss the dialog and take no further action.
+                .setNegativeButton(android.R.string.no, null)
+                .setIcon(android.R.drawable.ic_dialog_info)
+                .show();
+
+
+
 //        sendPreds(j);
     }
+
+
+    private void getCurrents() {
+        final Timer timer = new Timer();
+
+        timer.scheduleAtFixedRate( new TimerTask() {
+            public void run() {
+                if(run_task) {
+                    Long curr_now = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+                    current_average = (float) ((current_average*current_readings + curr_now)*1.0/(current_readings+1));
+                    current_readings+=1;
+                    Log.d("Remaining Power",String.valueOf(bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER)));
+                    Log.d("Current : ", String.valueOf(current_average));
+                }
+                else{
+                    timer.cancel();
+                    timer.purge();
+                }
+            }
+        }, 0, 1000);
+    }
+
+
     private void sendPreds(final JSONArray arr){
         RequestQueue requestQueue = Volley.newRequestQueue(MainActivity.this);
         StringRequest request = new StringRequest(Request.Method.POST, "http://192.168.0.107:5000/echo",new Response.Listener<String>() {
@@ -271,12 +347,7 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public byte[] getBody() {
-                try {
-                    return arr.toString().getBytes("utf-8");
-                } catch (UnsupportedEncodingException uee) {
-                    VolleyLog.wtf("Unsupported Encoding while trying to get the bytes of %s using %s", arr.toString(), "utf-8");
-                    return null;
-                }
+                return arr.toString().getBytes(StandardCharsets.UTF_8);
             }
 
 
