@@ -6,6 +6,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -164,7 +165,7 @@ public class MainActivity extends AppCompatActivity {
                 new CountDownTimer(20000, 1000) {
                     public void onFinish() {
                         run_task=false;
-                        idle_energy = current_average*10.0f/(1000.0f*3600.0f);
+                        idle_energy = current_average*10.0f/(20000.0f*3600.0f);
                         checked_idle_energy=true;
                         Toast.makeText(getApplicationContext(),"Idle Energy : "+idle_energy,Toast.LENGTH_SHORT).show();
                         Log.d("IdleEnergy", String.valueOf(idle_energy));
@@ -301,7 +302,6 @@ public class MainActivity extends AppCompatActivity {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        final ArrayList<Integer> arr = new ArrayList<>();
 
         long startTime = Calendar.getInstance().getTimeInMillis();
 
@@ -312,7 +312,13 @@ public class MainActivity extends AppCompatActivity {
 
         getCurrents();
 
+        IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        Intent br = this.registerReceiver(null, ifilter);
+        final int vol_bef =  br.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
+
         for (int i=0;i<imageNumber.getValue();++i) {
+            long time_start = Calendar.getInstance().getTimeInMillis();
+
             String im = images[i];
             Bitmap b = null;
 
@@ -325,21 +331,24 @@ public class MainActivity extends AppCompatActivity {
             tflite.run(inputImageBuffer.getBuffer(),outputProbabilityBuffer.getBuffer().rewind());
             float[] outputs = outputProbabilityBuffer.getFloatArray();
             int pred = getIndexOfLargest(outputs);
-            arr.add(pred);
+            long pred_time = Calendar.getInstance().getTimeInMillis()-startTime;
+            
             Log.d("Prediction", String.valueOf(pred));
         }
 
         run_task=false;
 
-        JSONArray j = new JSONArray(arr);
-        Log.d("Predictions",j.toString());
         long endTime = Calendar.getInstance().getTimeInMillis();
 
-        final Float totalTime = (float) ((endTime - startTime) / (3600.0*1000.0));
+        final float totalTime = (float) ((endTime - startTime) / (3600.0*1000.0));
 
         Log.d("Time Taken",String.valueOf(totalTime));
         Log.d("Average Current",String.valueOf(current_average));
         Log.d("Charge Consumed", String.valueOf(current_average*totalTime));
+
+        final int vol_aft =  br.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
+
+        checked_idle_energy=false;
 
         inference_btn.setEnabled(true);
 
@@ -360,6 +369,7 @@ public class MainActivity extends AppCompatActivity {
                             details.put("timeTaken",totalTime*3600.0);
                             details.put("imageNumber",imageNumber.getValue());
                             details.put("energyUsed",current_average*totalTime/1000.0);
+                            details.put("batteryVoltage",(float)((0.5)*(vol_bef+vol_aft))/1000.0);
                             details.put("modelSize",file_size);
                         } catch (JSONException e) {
                             e.printStackTrace();
