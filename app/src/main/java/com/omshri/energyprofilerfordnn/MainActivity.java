@@ -87,8 +87,8 @@ public class MainActivity extends AppCompatActivity {
 
     float current_average;
 
-    private float IMAGE_MEAN = 127.5f;
-    private float IMAGE_STD = 127.5f;
+    private float IMAGE_MEAN = 0.0f;
+    private float IMAGE_STD = 1.0f;
 
     String[] images;
 
@@ -152,16 +152,17 @@ public class MainActivity extends AppCompatActivity {
         idlepower_btn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                final AlertDialog dialog = new SpotsDialog.Builder().setContext(MainActivity.this).setCancelable(false).setMessage("Measuring Idle Power...").build();
-                dialog.show();
+                idlepower_btn.setEnabled(false);
+                inference_btn.setEnabled(false);
                 current_average = 0;
                 current_readings = 0;
                 run_task = true;
                 getCurrents();
                 new CountDownTimer(20000, 1000) {
                     public void onFinish() {
+                        idlepower_btn.setEnabled(true);
+                        inference_btn.setEnabled(true);
                         run_task = false;
-                        dialog.dismiss();
                         float vol = br.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) / 1000.0f;
                         idle_power = current_average * vol / (1000.0f);
                         checked_idle_power = true;
@@ -286,9 +287,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void doPreds() {
 
-        final AlertDialog dialog = new SpotsDialog.Builder().setContext(MainActivity.this).setCancelable(false).setMessage("Running Inferences...").build();
-        dialog.show();
-
         final long startTime = Calendar.getInstance().getTimeInMillis();
 
         current_average = 0;
@@ -298,79 +296,73 @@ public class MainActivity extends AppCompatActivity {
 
         getCurrents();
 
+        idlepower_btn.setEnabled(false);
+        inference_btn.setEnabled(false);
+
         final int vol_bef = br.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
         final String[] finalImages = images;
         final int num_images = imageNumber.getValue();
-        new AsyncTask<Void, Void, Void>() {
-            @Override
-            protected Void doInBackground(Void... params) {
-                for (int i = 0; i < num_images; ++i) {
-                    long time_start = Calendar.getInstance().getTimeInMillis();
 
-                    String im = finalImages[i];
-                    Bitmap b = null;
+        for (int i = 0; i < num_images; ++i) {
+            long time_start = Calendar.getInstance().getTimeInMillis();
 
-                    try {
-                        b = BitmapFactory.decodeStream(getAssets().open("imagen/" + im));
-                    } catch (IOException e) {
-                        e.printStackTrace();
+            String im = finalImages[i];
+            Bitmap b = null;
+
+            try {
+                b = BitmapFactory.decodeStream(getAssets().open("imagen/" + im));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            inputImageBuffer = loadImage(b);
+            tflite.run(inputImageBuffer.getBuffer(), outputProbabilityBuffer.getBuffer().rewind());
+            float[] outputs = outputProbabilityBuffer.getFloatArray();
+        }
+
+        idlepower_btn.setEnabled(true);
+        inference_btn.setEnabled(true);
+
+        run_task = false;
+
+        long endTime = Calendar.getInstance().getTimeInMillis();
+        final float totalTime = (float) ((endTime - startTime) / (60*1000.0));
+        final int vol_aft = br.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
+
+        final float vol = (vol_bef + vol_aft) / (2000.0f);
+        final float power_used = current_average * vol / 1000;
+
+        checked_idle_power = false;
+
+        inference_btn.setEnabled(true);
+        idlepower_btn.setEnabled(true);
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("Finished Runnning Model")
+                .setMessage("Click OK to send the data via WhatsApp")
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
+                    @SuppressLint("StaticFieldLeak")
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        JSONObject details = new JSONObject();
+                        try {
+                            details.put("phoneName", DeviceName.getDeviceName());
+                            details.put("modelLink", modellink_et.getText().toString());
+                            details.put("idlePower", idle_power);
+                            details.put("timeTaken", totalTime);
+                            details.put("imageNumber", num_images);
+                            details.put("powerUsed", power_used);
+                            details.put("phoneVoltage", vol);
+                            details.put("modelSize", file_size);
+                            sendWhatsAppMessage(details.toString(2));
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
                     }
-                    inputImageBuffer = loadImage(b);
-                    tflite.run(inputImageBuffer.getBuffer(), outputProbabilityBuffer.getBuffer().rewind());
-                    float[] outputs = outputProbabilityBuffer.getFloatArray();
-                }
-                return null;
-            }
-            @Override
-            protected void onPostExecute(Void aVoid) {
+                })
 
-                super.onPostExecute(aVoid);
-
-                dialog.dismiss();
-
-                run_task = false;
-
-                long endTime = Calendar.getInstance().getTimeInMillis();
-                final float totalTime = (float) ((endTime - startTime) / (60*1000.0));
-                final int vol_aft = br.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
-
-                final float vol = (vol_bef + vol_aft) / (2000.0f);
-                final float power_used = current_average * vol / 1000;
-
-                checked_idle_power = false;
-
-                inference_btn.setEnabled(true);
-                idlepower_btn.setEnabled(true);
-
-                new AlertDialog.Builder(MainActivity.this)
-                        .setTitle("Finished Runnning Model")
-                        .setMessage("Click OK to send the data via WhatsApp")
-                        .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
-                            @SuppressLint("StaticFieldLeak")
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                JSONObject details = new JSONObject();
-                                try {
-                                    details.put("phoneName", DeviceName.getDeviceName());
-                                    details.put("modelLink", modellink_et.getText().toString());
-                                    details.put("idlePower", idle_power);
-                                    details.put("timeTaken", totalTime);
-                                    details.put("imageNumber", num_images);
-                                    details.put("powerUsed", power_used);
-                                    details.put("phoneVoltage", vol);
-                                    details.put("modelSize", file_size);
-                                    sendWhatsAppMessage(details.toString(2));
-                                } catch (JSONException e) {
-                                    e.printStackTrace();
-                                }
-                            }
-                        })
-
-                        .setNegativeButton(android.R.string.no, null)
-                        .setIcon(android.R.drawable.ic_dialog_info)
-                        .show();
-            }
-        }.execute();
+                .setNegativeButton(android.R.string.no, null)
+                .setIcon(android.R.drawable.ic_dialog_info)
+                .show();
     }
 
     private void getCurrents() {
